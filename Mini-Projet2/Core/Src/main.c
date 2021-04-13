@@ -1553,6 +1553,7 @@ void AfficherGameOver(){
 	BSP_LCD_SetFont(&Font24);
 	sprintf(text_GO, "GAME OVER");
 	BSP_LCD_DisplayStringAt(0, 50, (uint8_t*) text_GO, CENTER_MODE);
+	BSP_LCD_SetFont(&Font16);
 	sprintf(text_rejouer, "APPUYER SUR LE BOUTON RESET POUR REJOUER");
 	BSP_LCD_DisplayStringAt(0, 188 , (uint8_t*) text_rejouer, CENTER_MODE);
 	BSP_LCD_SetFont(&Font16);
