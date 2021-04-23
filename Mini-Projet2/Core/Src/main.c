@@ -71,9 +71,8 @@ UART_HandleTypeDef huart6;
 
 SDRAM_HandleTypeDef hsdram1;
 
-osThreadId Tache_clavierHandle;
-osThreadId Tache_LCDHandle;
-osThreadId Tache_jeuHandle;
+osThreadId AfficheDeplaceSHandle;
+osThreadId Affiche_fruitsHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -98,9 +97,8 @@ static void MX_DAC_Init(void);
 static void MX_UART7_Init(void);
 static void MX_FMC_Init(void);
 static void MX_DMA2D_Init(void);
-void fonction_Tache_clavier(void const * argument);
-void fonction_Tache_LCD(void const * argument);
-void fonction_Tache_jeu(void const * argument);
+void fonction_AfficheDeplaceS(void const * argument);
+void fonction_Affiche_fruits(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -119,12 +117,11 @@ uint8_t FruitOK = 0;
 uint8_t XFruits[NFruits], YFruits[NFruits];
 uint8_t GOver = 0;
 TS_StateTypeDef TouchScreen;
-int acceleration_snake;
+QueueHandle_t xQueue = NULL;
 
 //void VerifierPosition(char);
 void AfficherLCD(uint16_t XposTemp, uint16_t YposTemp);
 void ActualiserPosition();
-void ArreterSnake();
 void CreerFruit();
 void Decalage();
 void VerifierFruit();
@@ -144,6 +141,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
   char text_titre[50]={};
   char text_jouer[50]={};
+  xQueue = xQueueCreate( 5, sizeof( uint32_t ) );
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -220,17 +218,13 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of Tache_clavier */
-  osThreadDef(Tache_clavier, fonction_Tache_clavier, osPriorityBelowNormal, 0, 128);
-  Tache_clavierHandle = osThreadCreate(osThread(Tache_clavier), NULL);
+  /* definition and creation of AfficheDeplaceS */
+  osThreadDef(AfficheDeplaceS, fonction_AfficheDeplaceS, osPriorityBelowNormal, 0, 128);
+  AfficheDeplaceSHandle = osThreadCreate(osThread(AfficheDeplaceS), NULL);
 
-  /* definition and creation of Tache_LCD */
-  osThreadDef(Tache_LCD, fonction_Tache_LCD, osPriorityLow, 0, 128);
-  Tache_LCDHandle = osThreadCreate(osThread(Tache_LCD), NULL);
-
-  /* definition and creation of Tache_jeu */
-  osThreadDef(Tache_jeu, fonction_Tache_jeu, osPriorityBelowNormal, 0, 128);
-  Tache_jeuHandle = osThreadCreate(osThread(Tache_jeu), NULL);
+  /* definition and creation of Affiche_fruits */
+  osThreadDef(Affiche_fruits, fonction_Affiche_fruits, osPriorityBelowNormal, 0, 128);
+  Affiche_fruitsHandle = osThreadCreate(osThread(Affiche_fruits), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -245,9 +239,9 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  BSP_TS_GetState(&TouchScreen);
+  BSP_TS_GetState(&TouchScreen);
 	  if(TouchScreen.touchDetected){
-	  			osKernelStart();}
+				osKernelStart();}
 
     /* USER CODE BEGIN 3 */
   }
@@ -1376,12 +1370,12 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if(rxbuffer[0]=='a')
-		HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin,1);
-	if(rxbuffer[0]=='e')
-		HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin,0);
-
+	uint8_t DataToSend[10];
+	const TickType_t xBlockTime = pdMS_TO_TICKS( 100 );
+//envoyer rxbuffer dans une file d'attente de 5 entiers
 	HAL_UART_Receive_IT(&huart1,rxbuffer,1);
+	DataToSend[0] = rxbuffer[0];
+	xQueueSendFromISR( xQueue, &DataToSend, xBlockTime );
 }
 
 //void VerifierPosition(char caractere_recu)
@@ -1476,37 +1470,30 @@ void ActualiserPosition() {
 	//CDC_Transmit_HS((uint8_t*)string, strlen(string));
 }
 
-void ArreterSnake(){
-//Pour arrêter le Snake, vous devez appuyer sur le bouton BP1.
-	if(HAL_GPIO_ReadPin(BP1_GPIO_Port,BP1_Pin) == 0 || GOver == 1){
-		State = 0;
-	}
-}
-
 void CreerFruit(){
 //Génère des fruits à des positions aléatoires pour augmenter la taille du serpent
-	uint8_t Valido = 0;
-	uint8_t NValidos = 0;
+	uint8_t Valide = 0;
+	uint8_t NValides = 0;
 	//char string[100];
-	while(NValidos < 3){
-		while(Valido == 0 && FruitOK == 0){
-			XFruits[NValidos] = (rand() % 47)*10;
-			YFruits[NValidos] = (rand() % 26)*10;
-			Valido = 1;
-			if(XFruits[NValidos] <= 10 || YFruits[NValidos] <= 10 || (XFruits[NValidos]%10 != 0) || (YFruits[NValidos]%10 != 0)){
-				Valido = 0;
+	while(NValides < 3){
+		while(Valide == 0 && FruitOK == 0){
+			XFruits[NValides] = (rand() % 47)*10;
+			YFruits[NValides] = (rand() % 26)*10;
+			Valide = 1;
+			if(XFruits[NValides] <= 10 || YFruits[NValides] <= 10 || (XFruits[NValides]%10 != 0) || (YFruits[NValides]%10 != 0)){
+				Valide = 0;
 			}else{
 				for(uint8_t i = 0; i < Longueur; i++){
 					if((XFruits[0] == Xpos[i] && YFruits[0] == Ypos[i])){
-						Valido = 0;
+						Valide = 0;
 					}
 				}
 			}
 		}
-		Valido = 0;
-		NValidos += 1;
+		Valide = 0;
+		NValides += 1;
 	}
-	if(FruitOK == 0 && NValidos == 3){
+	if(FruitOK == 0 && NValides == 3){
 		FruitOK = 1;
 		//sprintf(string, "Fruits: %d, %d - %d, %d - %d, %d\n\r", XFruits[0], YFruits[0], XFruits[1], YFruits[1], XFruits[2], YFruits[2]);
 		//CDC_Transmit_HS((uint8_t*)string, strlen(string));
@@ -1529,8 +1516,6 @@ void VerifierFruit(){
 			Longueur += 2;
 			FruitOK = 0;
 		}
-		else
-			acceleration_snake+=1;
 	}
 }
 
@@ -1560,108 +1545,82 @@ void AfficherGameOver(){
 	sprintf(Puntos, "Points: %d", (Longueur-LongueurInitiale)/2);
 	BSP_LCD_DisplayStringAt(0, 90, (uint8_t*) Puntos, CENTER_MODE);
 }
+
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_fonction_Tache_clavier */
+/* USER CODE BEGIN Header_fonction_AfficheDeplaceS */
 /**
-  * @brief  Function implementing the Tache_clavier thread.
+  * @brief  Function implementing the AfficheDeplaceS thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_fonction_Tache_clavier */
-void fonction_Tache_clavier(void const * argument)
+/* USER CODE END Header_fonction_AfficheDeplaceS */
+void fonction_AfficheDeplaceS(void const * argument)
 {
   /* USER CODE BEGIN 5 */
 	//Lit la valeur du caractère reçu, et met en place une machine d'état en fonction de cette valeur.
 
 	TickType_t xLastWakeTime;
 	xLastWakeTime = xTaskGetTickCount();
+	uint8_t DataToReceive[10];
+	const TickType_t xBlockTime = pdMS_TO_TICKS( 100 );
+	uint16_t XposTemp = 0;
+	uint16_t YposTemp = 0;
+	/* Clear the LCD */
+	BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+	BSP_LCD_Clear(LCD_COLOR_WHITE);
 
 	/* Infinite loop */
 	for(;;)
 	{
 	  HAL_GPIO_WritePin(LED17_GPIO_Port,LED17_Pin,1);
-
-	  if (rxbuffer[0] == 's')
-	  		{if(Ypos[0] + 10 != Ypos[1])
-	  		//Deplacement vers le bas
-	  		{
-	  			State = 1;
-	  		}}
-	  if (rxbuffer[0] == 'd')
-	  		{if(Xpos[0] + 10 != Xpos[1])
-	  	    //Deplacement vers la droite
-	  		{
-	  			State = 2;
-	  		}}
-	  if (rxbuffer[0] == 'z')
-	  		{if(Ypos[0] - 10 != Ypos[1])
-	  	    //Deplacement vers le haut
-	  		{
-	  			State = 3;
-	  		}}
-	  if (rxbuffer[0] == 'q')
-	  		{if(Xpos[0] - 10 != Xpos[1])
-	  	    //Deplacement vers la gauche
-	  		{
-	  			State = 4;
-	  		}}
+	  xQueueReceive( xQueue, &DataToReceive, xBlockTime );
+	  if (DataToReceive[0] == 's')
+			{if(Ypos[0] + 10 != Ypos[1])
+			//Deplacement vers le bas
+			{
+				State = 1;
+			}}
+	  if (DataToReceive[0] == 'd')
+			{if(Xpos[0] + 10 != Xpos[1])
+			//Deplacement vers la droite
+			{
+				State = 2;
+			}}
+	  if (DataToReceive[0] == 'z')
+			{if(Ypos[0] - 10 != Ypos[1])
+			//Deplacement vers le haut
+			{
+				State = 3;
+			}}
+	  if (DataToReceive[0] == 'q')
+			{if(Xpos[0] - 10 != Xpos[1])
+			//Deplacement vers la gauche
+			{
+				State = 4;
+			}}
 
 	  //VerifierPosition(rxbuffer[0]); //On vérifie qu'on ne demande pas au serpent de tourner de 180°
+	  ActualiserPosition();
+	  VerifierCorps();
+	  AfficherLCD(XposTemp, YposTemp);
 
 	  HAL_GPIO_WritePin(LED17_GPIO_Port,LED17_Pin,0);
 	  vTaskDelayUntil(&xLastWakeTime, 100);
-	}
+			}
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_fonction_Tache_LCD */
+/* USER CODE BEGIN Header_fonction_Affiche_fruits */
 /**
-* @brief Function implementing the Tache_LCD thread.
+* @brief Function implementing the Affiche_fruits thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_fonction_Tache_LCD */
-void fonction_Tache_LCD(void const * argument)
+/* USER CODE END Header_fonction_Affiche_fruits */
+void fonction_Affiche_fruits(void const * argument)
 {
-  /* USER CODE BEGIN fonction_Tache_LCD */
-  //Met à jour l'écran LCD avec la position du SNAKE.
-
-  uint16_t XposTemp = 0;
-  uint16_t YposTemp = 0;
-  /* Clear the LCD */
-  BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
-  BSP_LCD_Clear(LCD_COLOR_WHITE);
-  TickType_t xLastWakeTime;
-  xLastWakeTime = xTaskGetTickCount();
-  int periode = (75*(1 - acceleration_snake *0.05));
-
-  /* Infinite loop */
-  for(;;)
-  {
-	  HAL_GPIO_WritePin(LED16_GPIO_Port,LED16_Pin,1);
-
-	  AfficherLCD(XposTemp, YposTemp);
-
-	  HAL_GPIO_WritePin(LED15_GPIO_Port,LED15_Pin,0);
-	  vTaskDelayUntil(&xLastWakeTime, periode);
-  }
-
-  /* USER CODE END fonction_Tache_LCD */
-}
-
-/* USER CODE BEGIN Header_fonction_Tache_jeu */
-/**
-* @brief Function implementing the Tache_jeu thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_fonction_Tache_jeu */
-void fonction_Tache_jeu(void const * argument)
-{
-  /* USER CODE BEGIN fonction_Tache_jeu */
-  // Met à jour la position du serpent en fonction de l'état fourni par le GYRO.
-
+  /* USER CODE BEGIN fonction_Affiche_fruits */
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
   /* Infinite loop */
@@ -1669,16 +1628,13 @@ void fonction_Tache_jeu(void const * argument)
   {
 	  HAL_GPIO_WritePin(LED15_GPIO_Port,LED15_Pin,1);
 
-	  ActualiserPosition();
 	  CreerFruit();
-	  ArreterSnake();
 	  VerifierFruit();
-	  VerifierCorps();
 
 	  HAL_GPIO_WritePin(LED15_GPIO_Port,LED15_Pin,0);
 	  vTaskDelayUntil(&xLastWakeTime, 75);
   }
-  /* USER CODE END fonction_Tache_jeu */
+  /* USER CODE END fonction_Affiche_fruits */
 }
 
  /**
